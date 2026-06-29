@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PWD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVER}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: game-deal-watcher
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.mikeline.gamedealwatcher.kafka"
+
+server:
+  port: 8080
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN}
+    allowed-chat-id: ${TELEGRAM_ALLOWED_CHAT_ID}
+
+app:
+  poll:
+    interval-ms: 30000   # 30 minutes; lower to e.g. 60000 while testing (backup value - 1800000)
+
+#debug: true
