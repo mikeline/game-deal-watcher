@@ -61,9 +61,9 @@ public class PricePollerService {
         Optional<PriceHistory> lastRecord = priceHistoryRepository.findTopBySteamAppIdOrderByRecordedAtDesc(appId);
 
         if (lastRecord.isEmpty()) {
-            // C2+C10: always store the actual market price; track the undiscounted base separately
+            int final_price = current.discountPercent() == 0 ? current.finalPrice() : current.initial();
             PriceHistory record = new PriceHistory(appId, current.currency(),
-                    current.finalPrice(), current.discountPercent());
+                    final_price, 0);
             priceHistoryRepository.save(record);
             item.setLowestBasePrice(current.initial());
             trackedGameRepository.save(item);
@@ -83,8 +83,7 @@ public class PricePollerService {
             priceHistoryRepository.save(record);
         }
 
-        // C5+C6: keep lowestBasePrice as the true historical minimum whenever the non-discounted
-        // price changes. Integer.MAX_VALUE sentinel handles rows that pre-date this column.
+        // keep lowestBasePrice as the true historical minimum whenever the non-discounted
         boolean lastWasNonDiscounted = lastRecord.map(PriceHistory::getDiscountPercent).orElse(0) == 0;
         if (currentPrice != previousPrice && current.discountPercent() == 0) {
             int currentLowest = item.getLowestBasePrice() != null ? item.getLowestBasePrice() : Integer.MAX_VALUE;
@@ -100,7 +99,7 @@ public class PricePollerService {
         int countUnnotifiedSubscribers = gameSubscriptionService.countUnnotifiedSubscribers(appId);
 
         if (countUnnotifiedSubscribers > 0 && (currentPrice < previousPrice || current.discountPercent() > 0)) {
-            // C1: guard against null lowestBasePrice on rows that pre-date the column
+            // guard against null lowestBasePrice on rows that pre-date the column
             int lowestBase = item.getLowestBasePrice() != null ? item.getLowestBasePrice() : previousPrice;
             PriceDropEvent event = new PriceDropEvent(
                     appId, item.getAppName(), current.currency(),

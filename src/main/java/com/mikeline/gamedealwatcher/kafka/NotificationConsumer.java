@@ -26,22 +26,23 @@ public class NotificationConsumer {
         BigDecimal newPrice = BigDecimal.valueOf(event.newPrice() / 100.0);
         BigDecimal lowestBasePrice = BigDecimal.valueOf(event.lowestBasePrice() / 100.0);
 
-        // C4: lowestBasePrice==0 means no base data (old message or uninitialized row)
-        // C8: only show base info when realDiscount is positive; negative means stale lowestBasePrice
+        // lowestBasePrice==0 means no base data (old message or uninitialized row)
+        // only show base info when realDiscount is positive; negative means stale lowestBasePrice
         boolean hasBaseInfo = event.lowestBasePrice() > 0
                 && event.lowestBasePrice() != event.previousPrice();
         double realDiscount = hasBaseInfo
                 ? (double) (event.lowestBasePrice() - event.newPrice()) / event.lowestBasePrice() * 100.0
                 : 0.0;
-        if (realDiscount <= 0) hasBaseInfo = false;
 
         StringBuilder fmt = new StringBuilder("🎮 <b>Price Drop!</b>%n%n<b>%s</b>%n%.2f %s → <b>%.2f %s</b>%n");
         if (hasBaseInfo) {
             fmt.append("Initial Price: %.2f %s%n");
         }
         fmt.append("%d%% off");
-        if (hasBaseInfo) {
+        if (hasBaseInfo && realDiscount > 0) {
             fmt.append("%nReal Discount: %.0f%% off");
+        } else if (hasBaseInfo && realDiscount <= 0) {
+            fmt.append("%nNo discount compared to historical minimum");
         }
 
         Object[] args;
