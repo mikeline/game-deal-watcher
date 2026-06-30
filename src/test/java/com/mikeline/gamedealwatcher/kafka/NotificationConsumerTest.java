@@ -37,7 +37,7 @@ class NotificationConsumerTest {
     @BeforeEach
     void setUp() {
         consumer = new NotificationConsumer(telegramNotifier, gameSubscriptionService);
-        event = new PriceDropEvent(730L, "Counter-Strike 2", "USD", 2999, 1499, 50, Instant.now());
+        event = new PriceDropEvent(730L, "Counter-Strike 2", "USD", 2999, 2999, 1499, 50, Instant.now());
     }
 
     @Test

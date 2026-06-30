@@ -59,15 +59,22 @@ public class PricePollerService {
         SteamPriceDtos.PriceOverview current = maybePrice.get();
 
         Optional<PriceHistory> lastRecord = priceHistoryRepository.findTopBySteamAppIdOrderByRecordedAtDesc(appId);
-        PriceHistory record = new PriceHistory(appId, current.currency(),
-                current.finalPrice(), current.discountPercent());
 
         if (lastRecord.isEmpty()) {
+            // C2+C10: always store the actual market price; track the undiscounted base separately
+            PriceHistory record = new PriceHistory(appId, current.currency(),
+                    current.finalPrice(), current.discountPercent());
+            priceHistoryRepository.save(record);
+            item.setLowestBasePrice(current.initial());
+            trackedGameRepository.save(item);
+
             log.info("First price recorded for '{}' (appId {}): {} {}",
                     item.getAppName(), appId, current.finalPrice() / 100, current.currency());
-            priceHistoryRepository.save(record);
             return;
         }
+
+        PriceHistory record = new PriceHistory(appId, current.currency(),
+                current.finalPrice(), current.discountPercent());
 
         int previousPrice = lastRecord.get().getFinalPrice();
         int currentPrice = current.finalPrice();
@@ -76,22 +83,38 @@ public class PricePollerService {
             priceHistoryRepository.save(record);
         }
 
+        // C5+C6: keep lowestBasePrice as the true historical minimum whenever the non-discounted
+        // price changes. Integer.MAX_VALUE sentinel handles rows that pre-date this column.
+        boolean lastWasNonDiscounted = lastRecord.map(PriceHistory::getDiscountPercent).orElse(0) == 0;
+        if (currentPrice != previousPrice && current.discountPercent() == 0) {
+            int currentLowest = item.getLowestBasePrice() != null ? item.getLowestBasePrice() : Integer.MAX_VALUE;
+            int newLowest = currentPrice < previousPrice
+                    ? Math.min(currentLowest, currentPrice)
+                    : (lastWasNonDiscounted ? Math.min(currentLowest, previousPrice) : currentLowest);
+            if (currentLowest != newLowest) {
+                item.setLowestBasePrice(newLowest);
+                trackedGameRepository.save(item);
+            }
+        }
+
         int countUnnotifiedSubscribers = gameSubscriptionService.countUnnotifiedSubscribers(appId);
 
         if (countUnnotifiedSubscribers > 0 && (currentPrice < previousPrice || current.discountPercent() > 0)) {
+            // C1: guard against null lowestBasePrice on rows that pre-date the column
+            int lowestBase = item.getLowestBasePrice() != null ? item.getLowestBasePrice() : previousPrice;
             PriceDropEvent event = new PriceDropEvent(
                     appId, item.getAppName(), current.currency(),
-                    previousPrice, currentPrice, current.discountPercent(), Instant.now()
+                    previousPrice, lowestBase, currentPrice, current.discountPercent(), Instant.now()
             );
             priceEventProducer.publish(event);
-        } else if (currentPrice > previousPrice && lastRecord.map(PriceHistory::getDiscountPercent).orElse(0) == 0) {
+        } else if (currentPrice > previousPrice && lastWasNonDiscounted) {
             int increaseCents = currentPrice - previousPrice;
             gameSubscriptionService.resetNotificationStatus(appId);
             log.info("BASE PRICE INCREASED '{}' (appId {}): {} -> {} {} (+{})",
                     item.getAppName(), appId,
                     previousPrice / 100, currentPrice / 100, current.currency(),
                     increaseCents);
-            //TODO: Need to track it somehow to show more realistic discount later
+
         } else if (currentPrice > previousPrice) {
             int increaseCents = currentPrice - previousPrice;
             gameSubscriptionService.resetNotificationStatus(appId);
